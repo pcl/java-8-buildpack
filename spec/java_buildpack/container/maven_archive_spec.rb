@@ -1,6 +1,6 @@
 # Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013 the original author or authors.
+# Copyright 2015 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,10 +48,10 @@ describe JavaBuildpack::Container::Tomcat do
 
   let(:redis_store_configuration) { double('redis-store-configuration') }
 
-  it 'should detect WEB-INF',
+  it 'should not detect if WEB-INF but no maven-dependencies.json',
      app_fixture: 'container_tomcat' do
 
-    expect(component.supports?).to be
+    expect(component.supports?).not_to be
   end
 
   it 'should not detect when WEB-INF is absent',
@@ -66,10 +66,23 @@ describe JavaBuildpack::Container::Tomcat do
     expect(component.supports?).not_to be
   end
 
-  it 'should not detect when WEB-INF is present in a Maven Archive',
+  it 'should detect when WEB-INF is present in a Maven Archive',
      app_fixture: 'container_tomcat_mar' do
 
-    expect(component.supports?).not_to be
+    expect(component.supports?).to be
+
+    component.fetch_dependencies
+
+    root_webapp = app_dir + '.java-buildpack/tomcat/webapps/ROOT'
+
+    web_inf_lib = app_dir + 'WEB-INF/lib'
+    expect(web_inf_lib).to exist
+
+    guava_jar = web_inf_lib + 'guava-18.0.jar'
+    expect(guava_jar).to exist
+    expect(guava_jar).to be_symlink
+    expect(Digest::SHA1.file(guava_jar).hexdigest).to eq('cce0823396aa693798f8882e64213b1772032b09')
+
   end
 
   it 'should create submodules' do
@@ -93,12 +106,6 @@ describe JavaBuildpack::Container::Tomcat do
     expect(component.command).to eq("#{java_home.as_env_var} JAVA_OPTS=\"test-opt-2 test-opt-1 -Dhttp.port=$PORT\" " \
                                       '$PWD/.java-buildpack/tomcat/bin/catalina.sh run')
   end
-
-end
-
-class StubTomcat < JavaBuildpack::Container::Tomcat
-
-  public :command, :sub_components, :supports?
 
 end
 

@@ -1,0 +1,10 @@
+{
+  "dependencies": [
+    {
+      "groupId": "com.google.guava",
+      "artifactId": "guava",
+      "version": "18.0",
+      "sha1": "cce0823396aa693798f8882e64213b1772032b09"
+    }
+  ]
+}

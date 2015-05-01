@@ -22,12 +22,20 @@ require 'java_buildpack/container/tomcat/tomcat_lifecycle_support'
 require 'java_buildpack/container/tomcat/tomcat_logging_support'
 require 'java_buildpack/container/tomcat/tomcat_access_logging_support'
 require 'java_buildpack/container/tomcat/tomcat_redis_store'
+require 'json'
 
 module JavaBuildpack
   module Container
 
     # Encapsulates the detect, compile, and release functionality for Tomcat applications.
     class Tomcat < JavaBuildpack::Component::ModularComponent
+
+      alias :super_compile :compile
+
+      def compile
+        super_compile
+        fetch_dependencies
+      end
 
       protected
 
@@ -64,6 +72,57 @@ module JavaBuildpack
 
       def web_inf?
         (@application.root + 'WEB-INF').exist?
+      end
+
+      def maven_archive?
+        dependencies_file.exist?
+      end
+
+      def dependencies_file
+        lib_dir + 'maven-dependencies.json'
+      end
+
+      def lib_dir
+        @application.root + 'WEB-INF/lib/'
+      end
+
+      def fetch_dependencies
+        if !File.exist?("#{Dir.home}/.m2")
+          Dir.mkdir("#{Dir.home}/.m2")
+        end
+
+        start = Time.new
+        depsFile = File.read(dependencies_file)
+        deps = JSON.parse(depsFile)
+        deps['dependencies'].each { |dep|
+          group = dep['groupId']
+          artifact = dep['artifactId']
+          version = dep['version']
+          sha = dep['sha1']
+
+          groupDirs = group.gsub('.', '/')
+          artifactPath = "#{Dir.home}/.m2/repository/#{groupDirs}/#{artifact}/#{version}/#{artifact}-#{version}.jar"
+          if !File.exist?(artifactPath)
+            # fetch the dependency from the internet
+            puts "fetching #{artifact}"
+            results = `mvn dependency:get -Dartifact=#{group}:#{artifact}:#{version}`
+            if !File.exist?(artifactPath)
+              puts "Error fetching artifact! Details:"
+              puts results
+            end
+          end
+          
+          # validate the sha1 hash
+          actualsha = Digest::SHA1.file(artifactPath).hexdigest
+          if actualsha != sha
+            raise "SHA-1 mismatch for #{group}:#{artifact}:#{version}! Expected '#{sha}'; got '#{actualsha}'"
+          end
+          
+          # make a symlink from the right spot in the lib dir to the target
+          # TODO support for custom repository location env variable; classifiers
+          FileUtils.ln_s(artifactPath, lib_dir)
+        }
+        puts "Fetched maven dependencies in #{Time.new - start} seconds"
       end
 
     end
